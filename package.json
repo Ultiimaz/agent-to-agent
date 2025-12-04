@@ -1,0 +1,23 @@
+{
+  "name": "agent-to-agent",
+  "version": "1.0.0",
+  "description": "Event-driven multi-agent system with React monitoring",
+  "type": "module",
+  "scripts": {
+    "dev:backend": "node --watch backend/server.js",
+    "dev:monitor": "cd frontend-monitor && npm run dev",
+    "dev:app": "cd frontend-app && npm run dev",
+    "install:all": "npm install && cd frontend-monitor && npm install && cd ../frontend-app && npm install"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "openai": "^4.20.1",
+    "uuid": "^9.0.1",
+    "cors": "^2.8.5",
+    "amqplib": "^0.10.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(while read dir)",
+      "Bash(do touch \"$dir/__init__.py\")",
+      "Bash(done)",
+      "Bash(chmod:*)",
+      "Bash(cat:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(test:*)",
+      "Bash(python test_setup.py:*)",
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout 30 python3:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

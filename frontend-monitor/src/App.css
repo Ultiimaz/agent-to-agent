@@ -1,0 +1,183 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #0a0a0a;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.header-left h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status.connected {
+  background: #10b98120;
+  color: #10b981;
+}
+
+.status.disconnected {
+  background: #ef444420;
+  color: #ef4444;
+}
+
+.subscriber-count {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: #3b82f620;
+  color: #3b82f6;
+}
+
+.header-right {
+  display: flex;
+  gap: 1rem;
+}
+
+.filter {
+  padding: 0.5rem 1rem;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.clear-btn {
+  padding: 0.5rem 1rem;
+  background: #ef4444;
+  border: none;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.clear-btn:hover {
+  background: #dc2626;
+}
+
+.events {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: #64748b;
+  font-size: 1rem;
+}
+
+.event {
+  background: #1a1a1a;
+  border-left: 3px solid #3b82f6;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.event-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.event-icon {
+  font-size: 1rem;
+}
+
+.event-type {
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.event-time {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.event-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.event-agent {
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.event-task,
+.event-request {
+  color: #cbd5e1;
+}
+
+.event-result pre,
+.event-plan pre {
+  background: #0a0a0a;
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  border: 1px solid #2a2a2a;
+}
+
+.event-error {
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.event-question {
+  color: #eab308;
+  font-weight: 500;
+}
+
+.event-analysis {
+  color: #94a3b8;
+  font-style: italic;
+}
