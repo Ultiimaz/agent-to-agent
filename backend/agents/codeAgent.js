@@ -22,6 +22,13 @@ When given a task:
 - Include comments and documentation
 - Consider edge cases and error handling
 
+IMPORTANT - Next.js App Router Requirements:
+- The code will run in Next.js 14 with the App Router
+- Components using React hooks (useState, useEffect, useRef, etc.) or event handlers (onClick, onChange, etc.) MUST include "use client" directive at the very top of the file
+- Always add "use client"; as the first line when the component is interactive
+- Use inline styles or CSS-in-JS, do not rely on external CSS files
+- Export the main component as the default export
+
 Respond with clear, actionable code and explanations.`,
       model: 'anthropic/claude-3.5-sonnet'
     });

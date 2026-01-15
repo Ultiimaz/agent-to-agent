@@ -38,6 +38,11 @@ You must respond with a JSON object containing:
 
     this.availableAgents = new Map();
     this.taskResults = new Map();
+    this.taskStore = null;
+  }
+
+  setTaskStore(taskStore) {
+    this.taskStore = taskStore;
   }
 
   registerAgent(agent) {
@@ -46,6 +51,159 @@ You must respond with a JSON object containing:
       type: 'orchestrator_agent_registered',
       agentId: agent.id,
       agentName: agent.name
+    });
+  }
+
+  // Async version that updates task store instead of blocking
+  async orchestrateAsync(taskId, userRequest) {
+    const task = this.taskStore?.get(taskId);
+    if (!task) {
+      throw new Error('Task not found');
+    }
+
+    eventBus.publish({
+      type: 'orchestrator_started',
+      taskId,
+      request: userRequest
+    });
+
+    try {
+      const planningResponse = await this.execute({
+        description: userRequest,
+        context: {
+          availableAgents: Array.from(this.availableAgents.values()).map(a => ({
+            id: a.id,
+            name: a.name,
+            role: a.role
+          }))
+        }
+      });
+
+      if (!planningResponse.success) {
+        throw new Error('Planning failed: ' + planningResponse.error);
+      }
+
+      let plan;
+      try {
+        const jsonMatch = planningResponse.result.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          plan = JSON.parse(jsonMatch[0]);
+        } else {
+          plan = { plan: [], clarifications: [], analysis: planningResponse.result };
+        }
+      } catch (e) {
+        plan = { plan: [], clarifications: [], analysis: planningResponse.result };
+      }
+
+      // Handle clarifications asynchronously
+      if (plan.clarifications && plan.clarifications.length > 0) {
+        task.status = 'waiting_for_clarification';
+        task.clarification = {
+          questions: plan.clarifications,
+          context: { originalRequest: userRequest }
+        };
+
+        eventBus.publish({
+          type: 'orchestrator_needs_clarification',
+          taskId,
+          clarifications: plan.clarifications
+        });
+
+        // Wait for answer via event bus
+        const answer = await this.waitForClarificationAnswer(taskId);
+
+        // Continue with clarified request
+        task.status = 'running';
+        task.clarification = null;
+        return await this.orchestrateAsync(taskId, `${userRequest}\n\nClarifications: ${answer}`);
+      }
+
+      eventBus.publish({
+        type: 'orchestrator_plan_created',
+        taskId,
+        plan: plan.plan || [],
+        analysis: plan.analysis
+      });
+
+      const results = [];
+
+      if (plan.plan && plan.plan.length > 0) {
+        for (const planTask of plan.plan) {
+          const agent = this.availableAgents.get(planTask.agentId);
+
+          if (!agent) {
+            eventBus.publish({
+              type: 'orchestrator_error',
+              taskId,
+              error: `Agent ${planTask.agentId} not found`
+            });
+            continue;
+          }
+
+          const dependencyResults = {};
+          if (planTask.dependencies) {
+            for (const depId of planTask.dependencies) {
+              if (this.taskResults.has(depId)) {
+                dependencyResults[depId] = this.taskResults.get(depId);
+              }
+            }
+          }
+
+          eventBus.publish({
+            type: 'orchestrator_delegating',
+            taskId,
+            agentId: planTask.agentId,
+            task: planTask.task
+          });
+
+          const result = await agent.execute(planTask.task, {
+            dependencies: dependencyResults,
+            originalRequest: userRequest
+          });
+
+          this.taskResults.set(planTask.agentId + '_' + Date.now(), result);
+          results.push(result);
+        }
+      }
+
+      const finalResult = await this.synthesizeResults(userRequest, results, plan.analysis);
+
+      // Update task with result
+      task.status = 'completed';
+      task.result = finalResult;
+
+      eventBus.publish({
+        type: 'orchestrator_completed',
+        taskId,
+        result: finalResult
+      });
+
+      return finalResult;
+
+    } catch (error) {
+      task.status = 'error';
+      task.error = error.message;
+
+      eventBus.publish({
+        type: 'orchestrator_error',
+        taskId,
+        error: error.message
+      });
+
+      throw error;
+    }
+  }
+
+  // Wait for clarification answer via event bus
+  waitForClarificationAnswer(taskId) {
+    return new Promise((resolve) => {
+      const handler = (event) => {
+        if (event.type === 'task_clarification_answer' && event.taskId === taskId) {
+          eventBus.off('event', handler);
+          resolve(event.answer);
+        }
+      };
+      eventBus.on('event', handler);
     });
   }
 

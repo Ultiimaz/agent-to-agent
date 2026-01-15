@@ -1,52 +1,87 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import WebContainerPreview from './components/WebContainerPreview';
 import './App.css';
+
+const API_BASE = 'http://api.localhost:8030';
+const POLL_INTERVAL = 1000;
 
 function App() {
   const [request, setRequest] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [currentAnswer, setCurrentAnswer] = useState('');
+  const [taskId, setTaskId] = useState(null);
+  const [taskStatus, setTaskStatus] = useState(null);
+  const [clarification, setClarification] = useState(null);
+  const [clarificationAnswer, setClarificationAnswer] = useState('');
+  const [previewCode, setPreviewCode] = useState(null);
+  const [activeTab, setActiveTab] = useState('preview');
+  const pollIntervalRef = useRef(null);
 
+  // Poll for task status
   useEffect(() => {
-    // Subscribe to event bus to receive agent questions
-    const ws = new WebSocket('ws://api.localhost:8030');
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      // Listen for agent question events
-      if (data.type === 'agent_question') {
-        setQuestions(prev => [...prev, {
-          agentId: data.agentId,
-          agentName: data.agentName,
-          question: data.question,
-          context: data.context
-        }]);
+    if (!taskId || !loading) {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
       }
+      return;
+    }
 
-      // Listen for orchestrator clarification requests
-      if (data.type === 'orchestrator_needs_clarification') {
-        setQuestions(prev => [...prev, {
-          agentId: 'orchestrator',
-          agentName: 'Orchestrator',
-          question: data.clarifications.join('\n'),
-          context: {}
-        }]);
+    const pollTask = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/tasks/${taskId}`);
+        const task = await response.json();
+
+        setTaskStatus(task.status);
+
+        if (task.status === 'completed') {
+          setResult(task.result);
+          setLoading(false);
+          setClarification(null);
+          // Extract code for preview
+          if (task.result?.result) {
+            setPreviewCode(task.result.result);
+          }
+          if (task.result?.agentResults) {
+            // Look for code in agent results
+            for (const agentResult of task.result.agentResults) {
+              if (agentResult.result && hasCode(agentResult.result)) {
+                setPreviewCode(agentResult.result);
+                break;
+              }
+            }
+          }
+        } else if (task.status === 'error') {
+          setError(task.error);
+          setLoading(false);
+          setClarification(null);
+        } else if (task.status === 'waiting_for_clarification') {
+          setClarification(task.clarification);
+        }
+      } catch (err) {
+        console.error('Poll error:', err);
       }
     };
 
-    ws.onopen = () => {
-      console.log('[APP] Connected to event bus');
-    };
+    pollTask();
+    pollIntervalRef.current = setInterval(pollTask, POLL_INTERVAL);
 
-    ws.onclose = () => {
-      console.log('[APP] Disconnected from event bus');
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
     };
+  }, [taskId, loading]);
 
-    return () => ws.close();
-  }, []);
+  // Check if text contains code
+  function hasCode(text) {
+    return text && (
+      text.includes('```') ||
+      text.includes('export default') ||
+      text.includes('function') && text.includes('return')
+    );
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -55,10 +90,12 @@ function App() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setQuestions([]);
+    setTaskId(null);
+    setTaskStatus(null);
+    setClarification(null);
 
     try {
-      const response = await fetch('http://api.localhost:8030/api/execute', {
+      const response = await fetch(`${API_BASE}/api/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -68,56 +105,54 @@ function App() {
 
       const data = await response.json();
 
-      if (data.success) {
-        setResult(data);
+      if (data.taskId) {
+        setTaskId(data.taskId);
+        setTaskStatus(data.status);
       } else {
-        setError(data.error || 'An error occurred');
+        setError(data.error || 'Failed to start task');
+        setLoading(false);
       }
     } catch (err) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
 
-  const handleAnswerQuestion = async (question) => {
-    if (!currentAnswer.trim()) return;
+  const handleSubmitClarification = async () => {
+    if (!clarificationAnswer.trim() || !taskId) return;
 
     try {
-      await fetch('http://api.localhost:8030/api/agent/answer', {
+      await fetch(`${API_BASE}/api/tasks/${taskId}/answer`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          agentId: question.agentId,
-          answer: currentAnswer
-        })
+        body: JSON.stringify({ answer: clarificationAnswer })
       });
 
-      setQuestions(prev => prev.filter(q => q !== question));
-      setCurrentAnswer('');
+      setClarificationAnswer('');
+      setClarification(null);
+      setTaskStatus('running');
     } catch (err) {
-      console.error('Failed to answer question:', err);
+      console.error('Failed to submit clarification:', err);
     }
   };
 
   const exampleRequests = [
-    'Create a simple todo list application with React',
-    'Design a modern landing page for a SaaS product',
-    'Research the best practices for building REST APIs',
+    'Create a todo list component with add and delete functionality',
     'Build a calculator component with basic operations',
-    'Create a responsive navigation bar with dropdown menus'
+    'Create a responsive navigation bar with dropdown menus',
+    'Design a pricing card component with three tiers',
+    'Build a countdown timer component'
   ];
 
   return (
-    <div className="app">
-      <div className="container">
+    <div className="app-layout">
+      {/* Left Panel - Input */}
+      <div className="left-panel">
         <header className="header">
-          <h1 className="title">Agent-to-Agent System</h1>
-          <p className="subtitle">
-            Multi-agent orchestration with real-time event monitoring
-          </p>
+          <h1 className="title">Agent-to-Agent</h1>
+          <p className="subtitle">AI-powered component generation with live preview</p>
         </header>
 
         <form onSubmit={handleSubmit} className="form">
@@ -125,7 +160,7 @@ function App() {
             <textarea
               value={request}
               onChange={(e) => setRequest(e.target.value)}
-              placeholder="What would you like the agents to do? (e.g., Create a todo list app)"
+              placeholder="Describe the React component you want to create..."
               className="input"
               rows={4}
               disabled={loading}
@@ -136,17 +171,24 @@ function App() {
             {loading ? (
               <>
                 <span className="spinner"></span>
-                Processing...
+                {taskStatus === 'waiting_for_clarification' ? 'Waiting...' : 'Generating...'}
               </>
             ) : (
-              'Execute'
+              'Generate'
             )}
           </button>
+
+          {taskStatus && (
+            <div className="task-status">
+              <span className={`status-dot status-${taskStatus}`}></span>
+              <span>{taskStatus.replace(/_/g, ' ')}</span>
+            </div>
+          )}
         </form>
 
         <div className="examples">
-          <p className="examples-title">Try these examples:</p>
-          <div className="examples-grid">
+          <p className="examples-title">Examples:</p>
+          <div className="examples-list">
             {exampleRequests.map((example, index) => (
               <button
                 key={index}
@@ -160,71 +202,87 @@ function App() {
           </div>
         </div>
 
-        {questions.length > 0 && (
-          <div className="questions">
-            <h3>Agent Questions</h3>
-            {questions.map((question, index) => (
-              <div key={index} className="question-card">
-                <div className="question-header">
-                  <strong>{question.agentName}</strong> needs clarification:
-                </div>
-                <p className="question-text">{question.question}</p>
-                <div className="question-actions">
-                  <input
-                    type="text"
-                    value={currentAnswer}
-                    onChange={(e) => setCurrentAnswer(e.target.value)}
-                    placeholder="Your answer..."
-                    className="question-input"
-                  />
-                  <button
-                    onClick={() => handleAnswerQuestion(question)}
-                    className="answer-btn"
-                  >
-                    Answer
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {error && (
-          <div className="result error">
-            <h3>Error</h3>
-            <p>{error}</p>
-          </div>
-        )}
-
-        {result && (
-          <div className="result success">
-            <h3>Result</h3>
-            <div className="result-content">
-              <p>{result.result}</p>
-
-              {result.agentResults && result.agentResults.length > 0 && (
-                <details className="agent-results">
-                  <summary>Agent Contributions ({result.agentResults.length})</summary>
-                  {result.agentResults.map((agentResult, index) => (
-                    <div key={index} className="agent-result">
-                      <strong>{agentResult.agentName}:</strong>
-                      <pre>{agentResult.result}</pre>
-                    </div>
-                  ))}
-                </details>
-              )}
+        {clarification && (
+          <div className="clarification">
+            <h3>Clarification Needed</h3>
+            <div className="clarification-card">
+              {clarification.questions.map((q, index) => (
+                <p key={index} className="clarification-question">{q}</p>
+              ))}
+              <textarea
+                value={clarificationAnswer}
+                onChange={(e) => setClarificationAnswer(e.target.value)}
+                placeholder="Your answer..."
+                className="clarification-input"
+                rows={2}
+              />
+              <button
+                onClick={handleSubmitClarification}
+                className="answer-btn"
+                disabled={!clarificationAnswer.trim()}
+              >
+                Submit
+              </button>
             </div>
           </div>
         )}
 
+        {error && (
+          <div className="error-box">
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+
         <footer className="footer">
-          <p>
-            Monitor agent activity in real-time at{' '}
-            <a href="http://monitor.localhost:8030" target="_blank" rel="noopener noreferrer">
-              monitor.localhost:8030
-            </a>
-          </p>
+          <a href="http://monitor.localhost:8030" target="_blank" rel="noopener noreferrer">
+            Open Monitor
+          </a>
         </footer>
+      </div>
+
+      {/* Right Panel - Preview */}
+      <div className="right-panel">
+        <div className="tabs">
+          <button
+            className={`tab ${activeTab === 'preview' ? 'active' : ''}`}
+            onClick={() => setActiveTab('preview')}
+          >
+            Preview
+          </button>
+          <button
+            className={`tab ${activeTab === 'code' ? 'active' : ''}`}
+            onClick={() => setActiveTab('code')}
+          >
+            Code
+          </button>
+        </div>
+
+        <div className="tab-content">
+          {activeTab === 'preview' ? (
+            <WebContainerPreview generatedCode={previewCode} />
+          ) : (
+            <div className="code-view">
+              {result ? (
+                <div className="code-content">
+                  <div className="code-section">
+                    <h4>Result</h4>
+                    <pre>{result.result}</pre>
+                  </div>
+                  {result.agentResults?.map((agentResult, index) => (
+                    <div key={index} className="code-section">
+                      <h4>{agentResult.agentName}</h4>
+                      <pre>{agentResult.result}</pre>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="code-placeholder">
+                  <p>Generated code will appear here</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

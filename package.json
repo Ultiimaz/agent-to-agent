@@ -4,7 +4,7 @@
   "description": "Event-driven multi-agent system with React monitoring",
   "type": "module",
   "scripts": {
-    "dev:backend": "node --watch backend/server.js",
+    "dev:backend": "node --env-file=.env --watch backend/server.js",
     "dev:monitor": "cd frontend-monitor && npm run dev",
     "dev:app": "cd frontend-app && npm run dev",
     "install:all": "npm install && cd frontend-monitor && npm install && cd ../frontend-app && npm install"

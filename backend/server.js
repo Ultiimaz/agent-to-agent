@@ -1,6 +1,7 @@
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import cors from 'cors';
+import { randomUUID } from 'crypto';
 import { eventBus } from './messageQueue.js';
 import { OrchestratorAgent } from './orchestrator.js';
 import { CodeAgent } from './agents/codeAgent.js';
@@ -17,6 +18,9 @@ const PORT = 3001;
 app.use(cors());
 app.use(express.json());
 
+// Task store for async execution
+const tasks = new Map();
+
 const orchestrator = new OrchestratorAgent();
 const codeAgent = new CodeAgent();
 const designAgent = new DesignAgent();
@@ -25,6 +29,9 @@ const researchAgent = new ResearchAgent();
 orchestrator.registerAgent(codeAgent);
 orchestrator.registerAgent(designAgent);
 orchestrator.registerAgent(researchAgent);
+
+// Pass task store to orchestrator for async clarification handling
+orchestrator.setTaskStore(tasks);
 
 const mcpConfigs = {
   code: [
@@ -76,6 +83,7 @@ app.get('/api/events', (req, res) => {
   });
 });
 
+// Start a new task (async - returns immediately with task ID)
 app.post('/api/execute', async (req, res) => {
   const { request } = req.body;
 
@@ -83,14 +91,68 @@ app.post('/api/execute', async (req, res) => {
     return res.status(400).json({ error: 'Request is required' });
   }
 
-  try {
-    const result = await orchestrator.orchestrate(request);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  const taskId = randomUUID();
+
+  // Initialize task
+  tasks.set(taskId, {
+    id: taskId,
+    status: 'running',
+    request,
+    result: null,
+    error: null,
+    clarification: null,
+    createdAt: new Date().toISOString()
+  });
+
+  // Start orchestration in background
+  orchestrator.orchestrateAsync(taskId, request).catch(error => {
+    const task = tasks.get(taskId);
+    if (task) {
+      task.status = 'error';
+      task.error = error.message;
+    }
+  });
+
+  res.json({ taskId, status: 'running' });
 });
 
+// Get task status (for polling)
+app.get('/api/tasks/:taskId', (req, res) => {
+  const { taskId } = req.params;
+  const task = tasks.get(taskId);
+
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  res.json(task);
+});
+
+// Submit answer to clarification question
+app.post('/api/tasks/:taskId/answer', (req, res) => {
+  const { taskId } = req.params;
+  const { answer } = req.body;
+  const task = tasks.get(taskId);
+
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  if (task.status !== 'waiting_for_clarification') {
+    return res.status(400).json({ error: 'Task is not waiting for clarification' });
+  }
+
+  // Publish answer event
+  eventBus.publish({
+    type: 'task_clarification_answer',
+    taskId,
+    answer
+  });
+
+  res.json({ success: true });
+});
+
+// Legacy endpoint for backward compatibility
 app.post('/api/agent/answer', (req, res) => {
   const { agentId, answer } = req.body;
 
